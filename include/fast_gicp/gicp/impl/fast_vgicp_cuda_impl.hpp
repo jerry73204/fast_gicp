@@ -19,7 +19,7 @@
 
 namespace fast_gicp {
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 FastVGICPCuda<PointSource, PointTarget>::FastVGICPCuda() : LsqRegistration<PointSource, PointTarget>() {
   this->reg_name_ = "FastVGICPCuda";
   k_correspondences_ = 20;
@@ -32,13 +32,13 @@ FastVGICPCuda<PointSource, PointTarget>::FastVGICPCuda() : LsqRegistration<Point
   vgicp_cuda_->set_kernel_params(0.5, 3.0);
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 FastVGICPCuda<PointSource, PointTarget>::~FastVGICPCuda() {}
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setCorrespondenceRandomness(int k) {}
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setResolution(double resolution) {
   vgicp_cuda_->set_resolution(resolution);
 }
@@ -51,7 +51,7 @@ void FastVGICPCuda<PointSource, PointTarget>::setKernelWidth(double kernel_width
   vgicp_cuda_->set_kernel_params(kernel_width, max_dist);
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setRegularizationMethod(RegularizationMethod method) {
   regularization_method_ = method;
 }
@@ -71,26 +71,26 @@ void FastVGICPCuda<PointSource, PointTarget>::setNearestNeighborSearchMethod(Nea
   }
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::swapSourceAndTarget() {
   vgicp_cuda_->swap_source_and_target();
   input_.swap(target_);
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::clearSource() {
   input_.reset();
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::clearTarget() {
   target_.reset();
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setInputSource(const PointCloudSourceConstPtr& cloud) {
   // the input cloud is the same as the previous one
-  if(cloud == input_) {
+  if (cloud == input_) {
     return;
   }
 
@@ -100,7 +100,7 @@ void FastVGICPCuda<PointSource, PointTarget>::setInputSource(const PointCloudSou
   std::transform(cloud->begin(), cloud->end(), points.begin(), [=](const PointSource& pt) { return pt.getVector3fMap(); });
 
   vgicp_cuda_->set_source_cloud(points);
-  switch(neighbor_search_method_) {
+  switch (neighbor_search_method_) {
     case NearestNeighborMethod::CPU_PARALLEL_KDTREE: {
       std::vector<int> neighbors = find_neighbors_parallel_kdtree<PointSource>(k_correspondences_, cloud);
       vgicp_cuda_->set_source_neighbors(k_correspondences_, neighbors);
@@ -116,10 +116,10 @@ void FastVGICPCuda<PointSource, PointTarget>::setInputSource(const PointCloudSou
   }
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setInputTarget(const PointCloudTargetConstPtr& cloud) {
   // the input cloud is the same as the previous one
-  if(cloud == target_) {
+  if (cloud == target_) {
     return;
   }
 
@@ -129,7 +129,7 @@ void FastVGICPCuda<PointSource, PointTarget>::setInputTarget(const PointCloudTar
   std::transform(cloud->begin(), cloud->end(), points.begin(), [=](const PointTarget& pt) { return pt.getVector3fMap(); });
 
   vgicp_cuda_->set_target_cloud(points);
-  switch(neighbor_search_method_) {
+  switch (neighbor_search_method_) {
     case NearestNeighborMethod::CPU_PARALLEL_KDTREE: {
       std::vector<int> neighbors = find_neighbors_parallel_kdtree<PointTarget>(k_correspondences_, cloud);
       vgicp_cuda_->set_target_neighbors(k_correspondences_, neighbors);
@@ -146,22 +146,22 @@ void FastVGICPCuda<PointSource, PointTarget>::setInputTarget(const PointCloudTar
   vgicp_cuda_->create_target_voxelmap();
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::computeTransformation(PointCloudSource& output, const Matrix4& guess) {
   vgicp_cuda_->set_resolution(this->voxel_resolution_);
 
   LsqRegistration<PointSource, PointTarget>::computeTransformation(output, guess);
 }
 
-template<typename PointSource, typename PointTarget>
-template<typename PointT>
+template <typename PointSource, typename PointTarget>
+template <typename PointT>
 std::vector<int> FastVGICPCuda<PointSource, PointTarget>::find_neighbors_parallel_kdtree(int k, typename pcl::PointCloud<PointT>::ConstPtr cloud) const {
   pcl::search::KdTree<PointT> kdtree;
   kdtree.setInputCloud(cloud);
   std::vector<int> neighbors(cloud->size() * k);
 
 #pragma omp parallel for schedule(guided, 8)
-  for(int i = 0; i < cloud->size(); i++) {
+  for (int i = 0; i < cloud->size(); i++) {
     std::vector<int> k_indices;
     std::vector<float> k_sq_distances;
     kdtree.nearestKSearch(cloud->at(i), k, k_indices, k_sq_distances);
@@ -172,13 +172,13 @@ std::vector<int> FastVGICPCuda<PointSource, PointTarget>::find_neighbors_paralle
   return neighbors;
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 double FastVGICPCuda<PointSource, PointTarget>::linearize(const Eigen::Isometry3d& trans, Eigen::Matrix<double, 6, 6>* H, Eigen::Matrix<double, 6, 1>* b) {
   vgicp_cuda_->update_correspondences(trans);
   return vgicp_cuda_->compute_error(trans, H, b);
 }
 
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 double FastVGICPCuda<PointSource, PointTarget>::compute_error(const Eigen::Isometry3d& trans) {
   return vgicp_cuda_->compute_error(trans, nullptr, nullptr);
 }

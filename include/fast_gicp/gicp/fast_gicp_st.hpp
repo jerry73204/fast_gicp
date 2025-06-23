@@ -16,7 +16,7 @@ namespace fast_gicp {
 /**
  * @brief Fast GICP algorithm optimized for single threading
  */
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 class FastGICPSingleThread : public FastGICP<PointSource, PointTarget> {
 public:
   using Scalar = float;

@@ -20,7 +20,7 @@ namespace fast_gicp {
 /**
  * @brief Fast Voxelized GICP algorithm boosted with OpenMP
  */
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 class FastVGICP : public FastGICP<PointSource, PointTarget> {
 public:
   using Scalar = float;

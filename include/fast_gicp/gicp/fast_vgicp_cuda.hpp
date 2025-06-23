@@ -53,7 +53,7 @@ static_assert(static_cast<int>(NearestNeighborMethod::GPU_RBF_KERNEL) == 2, "Enu
 /**
  * @brief Fast Voxelized GICP algorithm boosted with CUDA
  */
-template<typename PointSource, typename PointTarget>
+template <typename PointSource, typename PointTarget>
 class FastVGICPCuda : public LsqRegistration<PointSource, PointTarget> {
 public:
   using Scalar = float;
@@ -102,7 +102,7 @@ protected:
   virtual double linearize(const Eigen::Isometry3d& trans, Eigen::Matrix<double, 6, 6>* H = nullptr, Eigen::Matrix<double, 6, 1>* b = nullptr) override;
   virtual double compute_error(const Eigen::Isometry3d& trans) override;
 
-  template<typename PointT>
+  template <typename PointT>
   std::vector<int> find_neighbors_parallel_kdtree(int k, typename pcl::PointCloud<PointT>::ConstPtr cloud) const;
 
 private:
