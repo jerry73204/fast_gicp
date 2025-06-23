@@ -59,10 +59,10 @@ void covariance_estimation(
   CudaExecutionContext ctx("covariance_estimation");
 
   thrust::device_vector<int> d_indices(points.size());
-  thrust::sequence(ctx.policy(), d_indices.begin(), d_indices.end());
+  thrust::sequence(thrust::cuda::par.on(ctx.stream()), d_indices.begin(), d_indices.end());
 
   covariances.resize(points.size());
-  thrust::for_each(ctx.policy(), d_indices.begin(), d_indices.end(), covariance_estimation_kernel(points, k, k_neighbors, covariances));
+  thrust::for_each(thrust::cuda::par.on(ctx.stream()), d_indices.begin(), d_indices.end(), covariance_estimation_kernel(points, k, k_neighbors, covariances));
 }
 }  // namespace cuda
 }  // namespace fast_gicp

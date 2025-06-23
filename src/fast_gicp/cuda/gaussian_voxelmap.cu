@@ -218,14 +218,18 @@ void GaussianVoxelMap::create_voxelmap(const thrust::device_vector<Eigen::Vector
   num_points.resize(voxelmap_info.num_voxels);
   voxel_means.resize(voxelmap_info.num_voxels);
   voxel_covs.resize(voxelmap_info.num_voxels);
-  thrust::fill(ctx.policy(), num_points.begin(), num_points.end(), 0);
-  thrust::fill(ctx.policy(), voxel_means.begin(), voxel_means.end(), Eigen::Vector3f::Zero().eval());
-  thrust::fill(ctx.policy(), voxel_covs.begin(), voxel_covs.end(), Eigen::Matrix3f::Zero().eval());
-
-  thrust::for_each(ctx.policy(), points.begin(), points.end(), accumulate_points_kernel(voxelmap_info_ptr.data(), buckets, num_points, voxel_means, voxel_covs));
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), num_points.begin(), num_points.end(), 0);
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), voxel_means.begin(), voxel_means.end(), Eigen::Vector3f::Zero().eval());
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), voxel_covs.begin(), voxel_covs.end(), Eigen::Matrix3f::Zero().eval());
 
   thrust::for_each(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
+    points.begin(),
+    points.end(),
+    accumulate_points_kernel(voxelmap_info_ptr.data(), buckets, num_points, voxel_means, voxel_covs));
+
+  thrust::for_each(
+    thrust::cuda::par.on(ctx.stream()),
     thrust::counting_iterator<int>(0),
     thrust::counting_iterator<int>(voxelmap_info.num_voxels),
     ndt_finalize_voxels_kernel(num_points, voxel_means, voxel_covs));
@@ -241,18 +245,18 @@ void GaussianVoxelMap::create_voxelmap(const thrust::device_vector<Eigen::Vector
   num_points.resize(voxelmap_info.num_voxels);
   voxel_means.resize(voxelmap_info.num_voxels);
   voxel_covs.resize(voxelmap_info.num_voxels);
-  thrust::fill(ctx.policy(), num_points.begin(), num_points.end(), 0);
-  thrust::fill(ctx.policy(), voxel_means.begin(), voxel_means.end(), Eigen::Vector3f::Zero().eval());
-  thrust::fill(ctx.policy(), voxel_covs.begin(), voxel_covs.end(), Eigen::Matrix3f::Zero().eval());
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), num_points.begin(), num_points.end(), 0);
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), voxel_means.begin(), voxel_means.end(), Eigen::Vector3f::Zero().eval());
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), voxel_covs.begin(), voxel_covs.end(), Eigen::Matrix3f::Zero().eval());
 
   thrust::for_each(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     thrust::make_zip_iterator(thrust::make_tuple(points.begin(), covariances.begin())),
     thrust::make_zip_iterator(thrust::make_tuple(points.end(), covariances.end())),
     accumulate_points_kernel(voxelmap_info_ptr.data(), buckets, num_points, voxel_means, voxel_covs));
 
   thrust::for_each(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     thrust::counting_iterator<int>(0),
     thrust::counting_iterator<int>(voxelmap_info.num_voxels),
     finalize_voxels_kernel(num_points, voxel_means, voxel_covs));
@@ -262,7 +266,7 @@ void GaussianVoxelMap::create_voxelmap(const thrust::device_vector<Eigen::Vector
 
 void GaussianVoxelMap::create_bucket_table(const fast_gicp::cuda::CudaExecutionContext& ctx, const thrust::device_vector<Eigen::Vector3f>& points) {
   thrust::device_vector<Eigen::Vector3i> coords(points.size());
-  thrust::transform(ctx.policy(), points.begin(), points.end(), coords.begin(), voxel_coord_kernel(voxelmap_info_ptr.data()));
+  thrust::transform(thrust::cuda::par.on(ctx.stream()), points.begin(), points.end(), coords.begin(), voxel_coord_kernel(voxelmap_info_ptr.data()));
 
   thrust::device_vector<thrust::pair<int, int>> index_buckets;
   thrust::device_vector<int> voxels_failures(2, 0);
@@ -272,11 +276,11 @@ void GaussianVoxelMap::create_bucket_table(const fast_gicp::cuda::CudaExecutionC
     voxelmap_info_ptr[0] = voxelmap_info;
 
     index_buckets.resize(num_buckets);
-    thrust::fill(ctx.policy(), index_buckets.begin(), index_buckets.end(), thrust::make_pair(-1, -1));
-    thrust::fill(ctx.policy(), voxels_failures.begin(), voxels_failures.end(), 0);
+    thrust::fill(thrust::cuda::par.on(ctx.stream()), index_buckets.begin(), index_buckets.end(), thrust::make_pair(-1, -1));
+    thrust::fill(thrust::cuda::par.on(ctx.stream()), voxels_failures.begin(), voxels_failures.end(), 0);
 
     thrust::for_each(
-      ctx.policy(),
+      thrust::cuda::par.on(ctx.stream()),
       thrust::counting_iterator<int>(0),
       thrust::counting_iterator<int>(points.size()),
       voxel_bucket_assignment_kernel(voxelmap_info_ptr.data(), coords, index_buckets, voxels_failures));
@@ -290,7 +294,7 @@ void GaussianVoxelMap::create_bucket_table(const fast_gicp::cuda::CudaExecutionC
   }
 
   buckets.resize(index_buckets.size());
-  thrust::transform(ctx.policy(), index_buckets.begin(), index_buckets.end(), buckets.begin(), voxel_coord_select_kernel(coords));
+  thrust::transform(thrust::cuda::par.on(ctx.stream()), index_buckets.begin(), index_buckets.end(), buckets.begin(), voxel_coord_select_kernel(coords));
 }
 
 }  // namespace cuda

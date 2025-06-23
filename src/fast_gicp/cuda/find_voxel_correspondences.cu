@@ -92,7 +92,7 @@ void find_voxel_correspondences(
   correspondences.resize(src_points.size() * offsets.size());
   for (int i = 0; i < offsets.size(); i++) {
     thrust::transform(
-      ctx.policy(),
+      thrust::cuda::par.on(ctx.stream()),
       thrust::counting_iterator<int>(0),
       thrust::counting_iterator<int>(src_points.size()),
       correspondences.begin() + src_points.size() * i,
@@ -100,7 +100,7 @@ void find_voxel_correspondences(
   }
 
   // remove invalid correspondences on the same stream
-  auto remove_loc = thrust::remove_if(ctx.policy(), correspondences.begin(), correspondences.end(), invalid_correspondence_kernel());
+  auto remove_loc = thrust::remove_if(thrust::cuda::par.on(ctx.stream()), correspondences.begin(), correspondences.end(), invalid_correspondence_kernel());
   correspondences.erase(remove_loc, correspondences.end());
 
   // Ensure all operations complete

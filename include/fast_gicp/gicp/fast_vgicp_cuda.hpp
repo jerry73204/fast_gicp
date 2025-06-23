@@ -20,6 +20,36 @@ class FastVGICPCudaCore;
 
 enum class NearestNeighborMethod { CPU_PARALLEL_KDTREE, GPU_BRUTEFORCE, GPU_RBF_KERNEL };
 
+// Helper functions for NearestNeighborMethod enum
+inline const char* neighborMethodToString(NearestNeighborMethod method) {
+  switch (method) {
+    case NearestNeighborMethod::CPU_PARALLEL_KDTREE:
+      return "CPU_PARALLEL_KDTREE";
+    case NearestNeighborMethod::GPU_BRUTEFORCE:
+      return "GPU_BRUTEFORCE";
+    case NearestNeighborMethod::GPU_RBF_KERNEL:
+      return "GPU_RBF_KERNEL";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+inline NearestNeighborMethod stringToNeighborMethod(const std::string& str) {
+  if (str == "GPU_BRUTEFORCE") return NearestNeighborMethod::GPU_BRUTEFORCE;
+  if (str == "GPU_RBF_KERNEL") return NearestNeighborMethod::GPU_RBF_KERNEL;
+  if (str == "CPU_KDTREE") return NearestNeighborMethod::CPU_PARALLEL_KDTREE;  // backward compatibility
+  return NearestNeighborMethod::CPU_PARALLEL_KDTREE;                           // default
+}
+
+inline bool isValidNeighborMethod(NearestNeighborMethod method) {
+  return method >= NearestNeighborMethod::CPU_PARALLEL_KDTREE && method <= NearestNeighborMethod::GPU_RBF_KERNEL;
+}
+
+// Compile-time validation
+static_assert(static_cast<int>(NearestNeighborMethod::CPU_PARALLEL_KDTREE) == 0, "Enum value changed");
+static_assert(static_cast<int>(NearestNeighborMethod::GPU_BRUTEFORCE) == 1, "Enum value changed");
+static_assert(static_cast<int>(NearestNeighborMethod::GPU_RBF_KERNEL) == 2, "Enum value changed");
+
 /**
  * @brief Fast Voxelized GICP algorithm boosted with CUDA
  */

@@ -128,8 +128,8 @@ void covariance_estimation_rbf(const thrust::device_vector<Eigen::Vector3f>& poi
   thrust::device_vector<Eigen::Vector3f> ext_points(num_blocks * covariance_estimation_kernel::BLOCK_SIZE);
   fast_gicp::cuda::CudaExecutionContext ctx("covariance_rbf");
 
-  thrust::copy(ctx.policy(), points.begin(), points.end(), ext_points.begin());
-  thrust::fill(ctx.policy(), ext_points.begin() + points.size(), ext_points.end(), Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+  thrust::copy(thrust::cuda::par.on(ctx.stream()), points.begin(), points.end(), ext_points.begin());
+  thrust::fill(thrust::cuda::par.on(ctx.stream()), ext_points.begin() + points.size(), ext_points.end(), Eigen::Vector3f(0.0f, 0.0f, 0.0f));
 
   thrust::device_vector<NormalDistribution> accumulated_dists(points.size() * num_blocks);
   std::vector<fast_gicp::cuda::CudaEvent> events;
@@ -138,7 +138,7 @@ void covariance_estimation_rbf(const thrust::device_vector<Eigen::Vector3f>& poi
   // accumulate kerneled point distributions
   for (int i = 0; i < num_blocks; i++) {
     covariance_estimation_kernel kernel(exp_factor_ptr, max_dist_ptr, ext_points.data() + covariance_estimation_kernel::BLOCK_SIZE * i);
-    thrust::transform(ctx.policy(), points.begin(), points.end(), accumulated_dists.begin() + points.size() * i, kernel);
+    thrust::transform(thrust::cuda::par.on(ctx.stream()), points.begin(), points.end(), accumulated_dists.begin() + points.size() * i, kernel);
     events.emplace_back();
     events.back().record(ctx.stream());
     // Event dependency is handled automatically by recording on the same stream
@@ -146,7 +146,7 @@ void covariance_estimation_rbf(const thrust::device_vector<Eigen::Vector3f>& poi
 
   // finalize distributions
   thrust::transform(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     thrust::counting_iterator<int>(0),
     thrust::counting_iterator<int>(points.size()),
     covariances.begin(),

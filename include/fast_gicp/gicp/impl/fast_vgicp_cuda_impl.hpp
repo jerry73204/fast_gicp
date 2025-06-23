@@ -2,6 +2,7 @@
 #define FAST_GICP_FAST_VGICP_CUDA_IMPL_HPP
 
 #include <atomic>
+#include <iostream>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -62,7 +63,12 @@ void FastVGICPCuda<PointSource, PointTarget>::setNeighborSearchMethod(NeighborSe
 
 template <typename PointSource, typename PointTarget>
 void FastVGICPCuda<PointSource, PointTarget>::setNearestNeighborSearchMethod(NearestNeighborMethod method) {
-  neighbor_search_method_ = method;
+  if (!isValidNeighborMethod(method)) {
+    std::cerr << "Warning: Invalid neighbor search method " << static_cast<int>(method) << ", defaulting to CPU_PARALLEL_KDTREE" << std::endl;
+    neighbor_search_method_ = NearestNeighborMethod::CPU_PARALLEL_KDTREE;
+  } else {
+    neighbor_search_method_ = method;
+  }
 }
 
 template<typename PointSource, typename PointTarget>

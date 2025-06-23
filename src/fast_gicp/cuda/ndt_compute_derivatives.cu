@@ -197,7 +197,7 @@ double p2d_ndt_compute_derivatives(
   CudaExecutionContext ctx("p2d_ndt_derivatives");
 
   auto sum_errors = thrust::transform_reduce(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     correspondences.begin(),
     correspondences.end(),
     p2d_ndt_compute_derivatives_kernel(target_voxelmap, source_points, linearized_x_ptr, x_ptr),
@@ -224,7 +224,7 @@ double d2d_ndt_compute_derivatives(
   CudaExecutionContext ctx("d2d_ndt_derivatives");
 
   auto sum_errors = thrust::transform_reduce(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     correspondences.begin(),
     correspondences.end(),
     d2d_ndt_compute_derivatives_kernel(target_voxelmap, source_voxelmap, linearized_x_ptr, x_ptr),

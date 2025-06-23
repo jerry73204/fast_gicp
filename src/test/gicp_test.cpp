@@ -93,12 +93,13 @@ TEST_F(GICPTestBase, LoadCheck) {
   EXPECT_FALSE(source->empty());
 }
 
-using Parameters = std::tuple<const char*, bool>;
+using Parameters = std::tuple<const char*, bool, fast_gicp::NearestNeighborMethod>;
 class AlignmentTest : public GICPTestBase, public testing::WithParamInterface<Parameters> {
 public:
   pcl::Registration<pcl::PointXYZ, pcl::PointXYZ>::Ptr create_reg() {
     std::string method = std::get<0>(GetParam());
     int num_threads = std::get<1>(GetParam()) ? 4 : 1;
+    fast_gicp::NearestNeighborMethod neighbor_method = std::get<2>(GetParam());
 
     if (method == "GICP") {
       auto gicp = pcl::make_shared<fast_gicp::FastGICP<pcl::PointXYZ, pcl::PointXYZ>>();
@@ -112,6 +113,10 @@ public:
     } else if (method == "VGICP_CUDA") {
 #ifdef USE_VGICP_CUDA
       auto vgicp = pcl::make_shared<fast_gicp::FastVGICPCuda<pcl::PointXYZ, pcl::PointXYZ>>();
+
+      // Set neighbor search method
+      vgicp->setNearestNeighborSearchMethod(neighbor_method);
+
       return vgicp;
 #endif
       return nullptr;
@@ -138,11 +143,18 @@ public:
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(AlignmentTest2, AlignmentTest, testing::Combine(testing::Values("GICP", "VGICP", "VGICP_CUDA", "NDT_CUDA"), testing::Bool()), [](const auto& info) {
-  std::stringstream sst;
-  sst << std::get<0>(info.param) << (std::get<1>(info.param) ? "_MT" : "_ST");
-  return sst.str();
-});
+INSTANTIATE_TEST_SUITE_P(
+  AlignmentTest2,
+  AlignmentTest,
+  testing::Combine(
+    testing::Values("GICP", "VGICP", "VGICP_CUDA", "NDT_CUDA"),
+    testing::Bool(),
+    testing::Values(fast_gicp::NearestNeighborMethod::CPU_PARALLEL_KDTREE, fast_gicp::NearestNeighborMethod::GPU_BRUTEFORCE, fast_gicp::NearestNeighborMethod::GPU_RBF_KERNEL)),
+  [](const auto& info) {
+    std::stringstream sst;
+    sst << std::get<0>(info.param) << (std::get<1>(info.param) ? "_MT" : "_ST") << "_" << fast_gicp::neighborMethodToString(std::get<2>(info.param));
+    return sst.str();
+  });
 
 TEST_P(AlignmentTest, test) {
   const double t_tol = 0.05;
@@ -199,6 +211,68 @@ TEST_P(AlignmentTest, test) {
   EXPECT_LT(errors[1], r_tol) << "SWAP AND SET TARGET TEST";
   EXPECT_TRUE(reg->hasConverged()) << "SWAP AND SET TARGET TEST";
 }
+
+#ifdef USE_VGICP_CUDA
+TEST_F(GICPTestBase, TestGPUBruteForceKNN) {
+  // Explicit test for GPU brute force KNN
+  auto vgicp = pcl::make_shared<fast_gicp::FastVGICPCuda<pcl::PointXYZ, pcl::PointXYZ>>();
+
+  // Explicitly use GPU brute force KNN
+  vgicp->setNearestNeighborSearchMethod(fast_gicp::NearestNeighborMethod::GPU_BRUTEFORCE);
+
+  // Set up and run the registration
+  vgicp->setInputTarget(target);
+  vgicp->setInputSource(source);
+
+  auto aligned = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  vgicp->align(*aligned);
+
+  // Verify results
+  EXPECT_TRUE(vgicp->hasConverged()) << "GPU BruteForce KNN registration failed to converge";
+
+  Eigen::Vector2f errors = pose_error(vgicp->getFinalTransformation());
+  EXPECT_LT(errors[0], 0.05) << "GPU BruteForce KNN translation error too large: " << errors[0];
+  EXPECT_LT(errors[1], 1.0 * M_PI / 180.0) << "GPU BruteForce KNN rotation error too large: " << errors[1];
+}
+
+TEST_F(GICPTestBase, CompareNeighborSearchMethods) {
+  // Compare results between different neighbor search methods
+  const double tolerance = 0.05;  // Allow larger differences due to GPU vs CPU precision
+
+  // Test with CPU KDTree (reference)
+  auto vgicp_cpu = pcl::make_shared<fast_gicp::FastVGICPCuda<pcl::PointXYZ, pcl::PointXYZ>>();
+  vgicp_cpu->setNearestNeighborSearchMethod(fast_gicp::NearestNeighborMethod::CPU_PARALLEL_KDTREE);
+  vgicp_cpu->setInputTarget(target);
+  vgicp_cpu->setInputSource(source);
+
+  auto aligned_cpu = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  vgicp_cpu->align(*aligned_cpu);
+
+  // Test with GPU BruteForce
+  auto vgicp_gpu = pcl::make_shared<fast_gicp::FastVGICPCuda<pcl::PointXYZ, pcl::PointXYZ>>();
+  vgicp_gpu->setNearestNeighborSearchMethod(fast_gicp::NearestNeighborMethod::GPU_BRUTEFORCE);
+  vgicp_gpu->setInputTarget(target);
+  vgicp_gpu->setInputSource(source);
+
+  auto aligned_gpu = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  vgicp_gpu->align(*aligned_gpu);
+
+  // Both should converge
+  EXPECT_TRUE(vgicp_cpu->hasConverged());
+  EXPECT_TRUE(vgicp_gpu->hasConverged());
+
+  // Results should be similar
+  Eigen::Matrix4f transform_cpu = vgicp_cpu->getFinalTransformation();
+  Eigen::Matrix4f transform_gpu = vgicp_gpu->getFinalTransformation();
+
+  Eigen::Matrix4f diff = transform_cpu.inverse() * transform_gpu;
+  double translation_diff = diff.block<3, 1>(0, 3).norm();
+  double rotation_diff = Eigen::AngleAxisf(diff.block<3, 3>(0, 0)).angle();
+
+  EXPECT_LT(translation_diff, tolerance) << "Translation difference between CPU and GPU KNN too large";
+  EXPECT_LT(rotation_diff, tolerance) << "Rotation difference between CPU and GPU KNN too large";
+}
+#endif
 
 int main(int argc, char** argv) {
   GICPTestBase::data_directory = argv[1];

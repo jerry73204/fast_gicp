@@ -51,7 +51,7 @@ void compute_mahalanobis(
 
   mahalanobis.resize(src_points.size());
   thrust::transform(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     thrust::make_zip_iterator(thrust::make_tuple(src_points.begin(), src_covs.begin(), voxel_correspondences.begin())),
     thrust::make_zip_iterator(thrust::make_tuple(src_points.end(), src_covs.end(), voxel_correspondences.end())),
     mahalanobis.begin(),

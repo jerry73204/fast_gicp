@@ -106,7 +106,7 @@ void covariance_regularization(thrust::device_vector<Eigen::Vector3f>& means, th
 
   if (method == RegularizationMethod::PLANE) {
     thrust::device_vector<int> d_indices(covs.size());
-    thrust::sequence(ctx.policy(), d_indices.begin(), d_indices.end());
+    thrust::sequence(thrust::cuda::par.on(ctx.stream()), d_indices.begin(), d_indices.end());
     auto first = thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(means.begin(), covs.begin(), d_indices.begin())), svd_kernel());
     auto last = thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(means.end(), covs.end(), d_indices.end())), svd_kernel());
 
@@ -114,12 +114,12 @@ void covariance_regularization(thrust::device_vector<Eigen::Vector3f>& means, th
     thrust::device_vector<Eigen::Matrix3f> val(1);
     val[0] = diag_matrix;
     thrust::device_ptr<Eigen::Matrix3f> diag_matrix_ptr = val.data();
-    thrust::for_each(ctx.policy(), first, last, svd_reconstruction_kernel(diag_matrix_ptr, covs));
+    thrust::for_each(thrust::cuda::par.on(ctx.stream()), first, last, svd_reconstruction_kernel(diag_matrix_ptr, covs));
 
   } else if (method == RegularizationMethod::FROBENIUS) {
-    thrust::for_each(ctx.policy(), covs.begin(), covs.end(), covariance_regularization_frobenius());
+    thrust::for_each(thrust::cuda::par.on(ctx.stream()), covs.begin(), covs.end(), covariance_regularization_frobenius());
   } else if (method == RegularizationMethod::MIN_EIG) {
-    thrust::for_each(ctx.policy(), covs.begin(), covs.end(), covariance_regularization_mineig());
+    thrust::for_each(thrust::cuda::par.on(ctx.stream()), covs.begin(), covs.end(), covariance_regularization_mineig());
   } else {
     std::cerr << "unimplemented covariance regularization method was selected!!" << std::endl;
   }

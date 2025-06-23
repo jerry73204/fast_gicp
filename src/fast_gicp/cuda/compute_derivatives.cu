@@ -163,7 +163,7 @@ double compute_derivatives(
 
   if (H == nullptr || b == nullptr) {
     float sum_errors = thrust::transform_reduce(
-      ctx.policy(),
+      thrust::cuda::par.on(ctx.stream()),
       voxel_correspondences.begin(),
       voxel_correspondences.end(),
       compute_derivatives_kernel<float>(voxelmap, src_points, src_covs, linearized_x_ptr, x_ptr),
@@ -174,7 +174,7 @@ double compute_derivatives(
   }
 
   auto sum_errors = thrust::transform_reduce(
-    ctx.policy(),
+    thrust::cuda::par.on(ctx.stream()),
     voxel_correspondences.begin(),
     voxel_correspondences.end(),
     compute_derivatives_kernel<thrust::tuple<float, Eigen::Matrix<float, 6, 6>, Eigen::Matrix<float, 6, 1>>>(voxelmap, src_points, src_covs, linearized_x_ptr, x_ptr),
