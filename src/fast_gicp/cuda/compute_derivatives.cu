@@ -9,6 +9,7 @@
 #include <thrust/transform_reduce.h>
 
 #include <fast_gicp/cuda/gaussian_voxelmap.cuh>
+#include <fast_gicp/cuda/cuda_context.h>
 
 namespace fast_gicp {
 namespace cuda {
@@ -157,8 +158,12 @@ double compute_derivatives(
   const thrust::device_ptr<const Eigen::Isometry3f>& x_ptr,
   Eigen::Matrix<double, 6, 6>* H,
   Eigen::Matrix<double, 6, 1>* b) {
+  // Create execution context for this operation
+  CudaExecutionContext ctx("compute_derivatives");
+
   if (H == nullptr || b == nullptr) {
     float sum_errors = thrust::transform_reduce(
+      ctx.policy(),
       voxel_correspondences.begin(),
       voxel_correspondences.end(),
       compute_derivatives_kernel<float>(voxelmap, src_points, src_covs, linearized_x_ptr, x_ptr),
@@ -169,6 +174,7 @@ double compute_derivatives(
   }
 
   auto sum_errors = thrust::transform_reduce(
+    ctx.policy(),
     voxel_correspondences.begin(),
     voxel_correspondences.end(),
     compute_derivatives_kernel<thrust::tuple<float, Eigen::Matrix<float, 6, 6>, Eigen::Matrix<float, 6, 1>>>(voxelmap, src_points, src_covs, linearized_x_ptr, x_ptr),

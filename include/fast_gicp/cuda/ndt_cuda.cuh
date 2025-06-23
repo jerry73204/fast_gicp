@@ -9,16 +9,8 @@
 #include <fast_gicp/ndt/ndt_settings.hpp>
 #include <fast_gicp/gicp/gicp_settings.hpp>
 
-namespace thrust {
-template <typename T1, typename T2>
-class pair;
-
-template <typename T>
-class device_allocator;
-
-template <typename T, typename Alloc>
-class device_vector;
-}  // namespace thrust
+// Include modern CUDA type system
+#include "cuda_types.h"
 
 namespace fast_gicp {
 namespace cuda {
@@ -27,11 +19,12 @@ class GaussianVoxelMap;
 
 class NDTCudaCore {
 public:
-  using Points = thrust::device_vector<Eigen::Vector3f, thrust::device_allocator<Eigen::Vector3f>>;
-  using Indices = thrust::device_vector<int, thrust::device_allocator<int>>;
-  using Matrices = thrust::device_vector<Eigen::Matrix3f, thrust::device_allocator<Eigen::Matrix3f>>;
-  using Correspondences = thrust::device_vector<thrust::pair<int, int>, thrust::device_allocator<thrust::pair<int, int>>>;
-  using VoxelCoordinates = thrust::device_vector<Eigen::Vector3i, thrust::device_allocator<Eigen::Vector3i>>;
+  // Modern type aliases using new type system
+  using Points = fast_gicp::cuda::Points3f;
+  using Indices = fast_gicp::cuda::Indices;
+  using Matrices = fast_gicp::cuda::Matrices3f;
+  using Correspondences = fast_gicp::cuda::Correspondences;
+  using VoxelCoordinates = fast_gicp::cuda::VoxelCoordinates;
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   NDTCudaCore();

@@ -1,6 +1,6 @@
 #include <fast_gicp/cuda/ndt_cuda.cuh>
 
-#include <thrust/device_vector.h>
+#include "cuda_types.h"
 
 #include <fast_gicp/cuda/gaussian_voxelmap.cuh>
 #include <fast_gicp/cuda/covariance_regularization.cuh>
@@ -15,7 +15,7 @@ NDTCudaCore::NDTCudaCore() {
   resolution = 1.0;
   linearized_x.setIdentity();
 
-  offsets.reset(new thrust::device_vector<Eigen::Vector3i>(1));
+  offsets.reset(new VoxelCoordinates(1));
   (*offsets)[0] = Eigen::Vector3i::Zero().eval();
 
   distance_mode = fast_gicp::NDTDistanceMode::D2D;
@@ -33,7 +33,7 @@ void NDTCudaCore::set_resolution(double resolution) {
 }
 
 void NDTCudaCore::set_neighbor_search_method(fast_gicp::NeighborSearchMethod method, double radius) {
-  thrust::host_vector<Eigen::Vector3i, Eigen::aligned_allocator<Eigen::Vector3i>> h_offsets;
+  fast_gicp::cuda::host_vector<Eigen::Vector3i> h_offsets;
 
   switch (method) {
     default:
@@ -93,7 +93,7 @@ void NDTCudaCore::swap_source_and_target() {
 }
 
 void NDTCudaCore::set_source_cloud(const std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>>& cloud) {
-  thrust::host_vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>> points(cloud.begin(), cloud.end());
+  fast_gicp::cuda::aligned_host_vector<Eigen::Vector3f> points(cloud.begin(), cloud.end());
   if (!source_points) {
     source_points.reset(new Points());
   }
@@ -103,7 +103,7 @@ void NDTCudaCore::set_source_cloud(const std::vector<Eigen::Vector3f, Eigen::ali
 }
 
 void NDTCudaCore::set_target_cloud(const std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>>& cloud) {
-  thrust::host_vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>> points(cloud.begin(), cloud.end());
+  fast_gicp::cuda::aligned_host_vector<Eigen::Vector3f> points(cloud.begin(), cloud.end());
   if (!target_points) {
     target_points.reset(new Points());
   }
@@ -140,7 +140,7 @@ void NDTCudaCore::create_target_voxelmap() {
 }
 
 void NDTCudaCore::update_correspondences(const Eigen::Isometry3d& trans) {
-  thrust::device_vector<Eigen::Isometry3f> trans_ptr(1);
+  fast_gicp::cuda::device_vector<Eigen::Isometry3f> trans_ptr(1);
   trans_ptr[0] = trans.cast<float>();
 
   if (correspondences == nullptr) {
@@ -160,11 +160,11 @@ void NDTCudaCore::update_correspondences(const Eigen::Isometry3d& trans) {
 }
 
 double NDTCudaCore::compute_error(const Eigen::Isometry3d& trans, Eigen::Matrix<double, 6, 6>* H, Eigen::Matrix<double, 6, 1>* b) const {
-  thrust::host_vector<Eigen::Isometry3f, Eigen::aligned_allocator<Eigen::Isometry3f>> trans_(2);
+  fast_gicp::cuda::aligned_host_vector<Eigen::Isometry3f> trans_(2);
   trans_[0] = linearized_x;
   trans_[1] = trans.cast<float>();
 
-  thrust::device_vector<Eigen::Isometry3f> trans_ptr = trans_;
+  fast_gicp::cuda::device_vector<Eigen::Isometry3f> trans_ptr = trans_;
 
   switch (distance_mode) {
     default:

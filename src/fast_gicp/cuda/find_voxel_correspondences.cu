@@ -2,11 +2,12 @@
 #include <Eigen/Geometry>
 
 #include <thrust/remove.h>
-#include <thrust/device_vector.h>
-#include <thrust/async/transform.h>
+#include "cuda_types.h"
+#include <thrust/transform.h>
 #include <fast_gicp/cuda/vector3_hash.cuh>
 #include <fast_gicp/cuda/gaussian_voxelmap.cuh>
 #include <fast_gicp/cuda/find_voxel_correspondences.cuh>
+#include <fast_gicp/cuda/cuda_context.h>
 
 namespace fast_gicp {
 namespace cuda {
@@ -16,7 +17,7 @@ namespace {
 struct find_voxel_correspondences_kernel {
   find_voxel_correspondences_kernel(
     const GaussianVoxelMap& voxelmap,
-    const thrust::device_vector<Eigen::Vector3f>& src_points,
+    const fast_gicp::cuda::device_vector<Eigen::Vector3f>& src_points,
     const thrust::device_ptr<const Eigen::Isometry3f>& trans_ptr,
     thrust::device_ptr<const Eigen::Vector3i> offset_ptr)
   : trans_ptr(trans_ptr),
@@ -36,15 +37,15 @@ struct find_voxel_correspondences_kernel {
     Eigen::Vector3i coord = calc_voxel_coord(x, voxelmap_info.voxel_resolution) + offset;
     uint64_t hash = vector3i_hash(coord);
 
-    for(int i = 0; i < voxelmap_info.max_bucket_scan_count; i++) {
+    for (int i = 0; i < voxelmap_info.max_bucket_scan_count; i++) {
       uint64_t bucket_index = (hash + i) % voxelmap_info.num_buckets;
       const thrust::pair<Eigen::Vector3i, int>& bucket = thrust::raw_pointer_cast(buckets_ptr)[bucket_index];
 
-      if(bucket.second < 0) {
+      if (bucket.second < 0) {
         return -1;
       }
 
-      if(bucket.first == coord) {
+      if (bucket.first == coord) {
         return bucket.second;
       }
     }
@@ -73,41 +74,37 @@ struct find_voxel_correspondences_kernel {
 };
 
 struct invalid_correspondence_kernel {
-  __host__ __device__ bool operator() (const thrust::pair<int, int>& corr) const {
-    return corr.first < 0 || corr.second < 0;
-  }
+  __host__ __device__ bool operator()(const thrust::pair<int, int>& corr) const { return corr.first < 0 || corr.second < 0; }
 };
 
 }  // namespace
 
 void find_voxel_correspondences(
-  const thrust::device_vector<Eigen::Vector3f>& src_points,
+  const fast_gicp::cuda::device_vector<Eigen::Vector3f>& src_points,
   const GaussianVoxelMap& voxelmap,
   const thrust::device_ptr<const Eigen::Isometry3f>& x_ptr,
-  const thrust::device_vector<Eigen::Vector3i>& offsets,
-  thrust::device_vector<thrust::pair<int, int>>& correspondences) {
-  std::vector<thrust::system::cuda::unique_eager_event> events(offsets.size());
+  const fast_gicp::cuda::device_vector<Eigen::Vector3i>& offsets,
+  fast_gicp::cuda::device_vector<thrust::pair<int, int>>& correspondences) {
+  // Create execution context for correspondence finding
+  fast_gicp::cuda::CudaExecutionContext ctx("find_correspondences");
 
   // find correspondences
   correspondences.resize(src_points.size() * offsets.size());
-  for(int i=0; i<offsets.size(); i++) {
-    auto event = thrust::async::transform(
+  for (int i = 0; i < offsets.size(); i++) {
+    thrust::transform(
+      ctx.policy(),
       thrust::counting_iterator<int>(0),
       thrust::counting_iterator<int>(src_points.size()),
       correspondences.begin() + src_points.size() * i,
       find_voxel_correspondences_kernel(voxelmap, src_points, x_ptr, offsets.data() + i));
-
-    events[i] = std::move(event);
   }
 
-  // synchronize
-  for(auto& event: events) {
-    event.wait();
-  }
-
-  // remove invlid correspondences
-  auto remove_loc = thrust::remove_if(correspondences.begin(), correspondences.end(), invalid_correspondence_kernel());
+  // remove invalid correspondences on the same stream
+  auto remove_loc = thrust::remove_if(ctx.policy(), correspondences.begin(), correspondences.end(), invalid_correspondence_kernel());
   correspondences.erase(remove_loc, correspondences.end());
+
+  // Ensure all operations complete
+  ctx.synchronize();
 }
 
 }  // namespace cuda

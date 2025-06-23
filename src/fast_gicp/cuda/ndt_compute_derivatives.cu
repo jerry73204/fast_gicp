@@ -1,4 +1,5 @@
 #include <fast_gicp/cuda/ndt_compute_derivatives.cuh>
+#include <fast_gicp/cuda/cuda_context.h>
 
 #include <thrust/transform_reduce.h>
 
@@ -192,7 +193,11 @@ double p2d_ndt_compute_derivatives(
   const thrust::device_ptr<const Eigen::Isometry3f>& x_ptr,
   Eigen::Matrix<double, 6, 6>* H,
   Eigen::Matrix<double, 6, 1>* b) {
+  // Create execution context for this operation
+  CudaExecutionContext ctx("p2d_ndt_derivatives");
+
   auto sum_errors = thrust::transform_reduce(
+    ctx.policy(),
     correspondences.begin(),
     correspondences.end(),
     p2d_ndt_compute_derivatives_kernel(target_voxelmap, source_points, linearized_x_ptr, x_ptr),
@@ -215,7 +220,11 @@ double d2d_ndt_compute_derivatives(
   const thrust::device_ptr<const Eigen::Isometry3f>& x_ptr,
   Eigen::Matrix<double, 6, 6>* H,
   Eigen::Matrix<double, 6, 1>* b) {
+  // Create execution context for this operation
+  CudaExecutionContext ctx("d2d_ndt_derivatives");
+
   auto sum_errors = thrust::transform_reduce(
+    ctx.policy(),
     correspondences.begin(),
     correspondences.end(),
     d2d_ndt_compute_derivatives_kernel(target_voxelmap, source_voxelmap, linearized_x_ptr, x_ptr),

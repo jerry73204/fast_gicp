@@ -1,6 +1,7 @@
 #include <fast_gicp/cuda/covariance_estimation.cuh>
+#include <fast_gicp/cuda/cuda_context.h>
 
-#include <thrust/device_vector.h>
+#include "cuda_types.h"
 
 #include <thrust/async/for_each.h>
 #include <thrust/async/transform.h>
@@ -125,29 +126,34 @@ void covariance_estimation_rbf(const thrust::device_vector<Eigen::Vector3f>& poi
   int num_blocks = (points.size() + (covariance_estimation_kernel::BLOCK_SIZE - 1)) / covariance_estimation_kernel::BLOCK_SIZE;
   // padding
   thrust::device_vector<Eigen::Vector3f> ext_points(num_blocks * covariance_estimation_kernel::BLOCK_SIZE);
-  thrust::copy(points.begin(), points.end(), ext_points.begin());
-  thrust::fill(ext_points.begin() + points.size(), ext_points.end(), Eigen::Vector3f(0.0f, 0.0f, 0.0f));
+  fast_gicp::cuda::CudaExecutionContext ctx("covariance_rbf");
+
+  thrust::copy(ctx.policy(), points.begin(), points.end(), ext_points.begin());
+  thrust::fill(ctx.policy(), ext_points.begin() + points.size(), ext_points.end(), Eigen::Vector3f(0.0f, 0.0f, 0.0f));
 
   thrust::device_vector<NormalDistribution> accumulated_dists(points.size() * num_blocks);
-
-  thrust::system::cuda::detail::unique_stream stream;
-  std::vector<thrust::system::cuda::unique_eager_event> events(num_blocks);
+  std::vector<fast_gicp::cuda::CudaEvent> events;
+  events.reserve(num_blocks);
 
   // accumulate kerneled point distributions
   for (int i = 0; i < num_blocks; i++) {
     covariance_estimation_kernel kernel(exp_factor_ptr, max_dist_ptr, ext_points.data() + covariance_estimation_kernel::BLOCK_SIZE * i);
-    auto event = thrust::async::transform(points.begin(), points.end(), accumulated_dists.begin() + points.size() * i, kernel);
-    events[i] = std::move(event);
-    thrust::system::cuda::detail::create_dependency(stream, events[i]);
+    thrust::transform(ctx.policy(), points.begin(), points.end(), accumulated_dists.begin() + points.size() * i, kernel);
+    events.emplace_back();
+    events.back().record(ctx.stream());
+    // Event dependency is handled automatically by recording on the same stream
   }
 
   // finalize distributions
   thrust::transform(
-    thrust::cuda::par.on(stream.native_handle()),
+    ctx.policy(),
     thrust::counting_iterator<int>(0),
     thrust::counting_iterator<int>(points.size()),
     covariances.begin(),
     finalization_kernel(points.size(), accumulated_dists));
+
+  // Ensure all operations complete
+  ctx.synchronize();
 }
 
 }  // namespace cuda

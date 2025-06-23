@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.10.0)
-project(fast_gicp)
+cmake_minimum_required(VERSION 3.18.0)  # Required for CUDA 12.x support
+project(fast_gicp LANGUAGES C CXX)  # Enable C language for MPI compatibility
 
 option(BUILD_VGICP_CUDA "Build GPU-powered VGICP" OFF)
 option(BUILD_apps "Build application programs" ON)
@@ -8,6 +8,12 @@ option(BUILD_PYTHON_BINDINGS "Build python bindings" OFF)
 
 set(CMAKE_BUILD_TYPE "Release")
 
+# Set C++ standard for CUDA 12.x compatibility
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+find_package(MPI QUIET)  # Required for some PCL/VTK configurations
 find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 add_definitions(${PCL_DEFINITIONS})
@@ -33,9 +39,35 @@ if (OPENMP_FOUND)
 endif()
 
 if(BUILD_VGICP_CUDA)
-  find_package(CUDA REQUIRED)
-  include_directories(${CUDA_INCLUDE_DIRS})
-  link_directories(${CUDA_LIBRARY_DIRS})
+  # Modern CUDA 12.x support
+  find_package(CUDAToolkit 12.0 REQUIRED)
+  
+  # Set CUDA compiler and host compiler before enabling CUDA language
+  set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
+  set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
+  
+  # Set default architecture before enabling CUDA - only recent GPUs for faster builds
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES "75;80;86;87;89;90")  # Turing, Ampere, Ada Lovelace, Hopper
+  endif()
+  
+  enable_language(CUDA)
+  
+  # Set CUDA standards for modern compilation
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  set(CMAKE_CUDA_EXTENSIONS OFF)
+  
+  # CUDA compilation flags for 12.x compatibility and fast builds
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DTHRUST_IGNORE_CUB_VERSION_CHECK")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DFAST_GICP_CUDA_12_MODERNIZATION")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")  # Suppress architecture warnings
+  
+  message(STATUS "CUDA 12.x enabled with architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+  message(STATUS "Using CUDA compiler: ${CMAKE_CUDA_COMPILER}")
+  message(STATUS "Using CUDA host compiler: ${CMAKE_CUDA_HOST_COMPILER}")
 endif()
 
 ###################################
@@ -111,12 +143,12 @@ endif()
 
 ### CUDA ###
 if(BUILD_VGICP_CUDA)
-  set(CUDA_NVCC_FLAGS "--expt-relaxed-constexpr")
   add_definitions(-DUSE_VGICP_CUDA)
 
-  cuda_add_library(fast_vgicp_cuda SHARED
+  # Modern CUDA library creation (replaces cuda_add_library)
+  add_library(fast_vgicp_cuda SHARED
     src/fast_gicp/cuda/fast_vgicp_cuda.cu
-    src/fast_gicp/cuda/brute_force_knn.cu
+    src/fast_gicp/cuda/brute_force_knn.cu  # Pure Thrust/CUB implementation (Phase 4)
     src/fast_gicp/cuda/covariance_estimation.cu
     src/fast_gicp/cuda/covariance_estimation_rbf.cu
     src/fast_gicp/cuda/covariance_regularization.cu
@@ -127,16 +159,24 @@ if(BUILD_VGICP_CUDA)
     src/fast_gicp/cuda/ndt_cuda.cu
     src/fast_gicp/cuda/ndt_compute_derivatives.cu
   )
+  
+  # Set CUDA language properties for modern CMake
+  set_property(TARGET fast_vgicp_cuda PROPERTY CUDA_LANGUAGE_STANDARD 17)
+  set_property(TARGET fast_vgicp_cuda PROPERTY CUDA_STANDARD_REQUIRED ON)
+  
   target_include_directories(fast_vgicp_cuda PRIVATE
     include
     thirdparty/Eigen
-    thirdparty/nvbio
+    # thirdparty/nvbio  # Disabled - nvbio dependency removed for Phase 1
+    ${EIGEN3_INCLUDE_DIR}
     ${catkin_INCLUDE_DIRS}
   )
   target_link_libraries(fast_vgicp_cuda
     ${catkin_LIBRARIES}
+    CUDA::cublas
+    CUDA::curand
+    CUDA::cusparse
   )
-  cuda_add_cublas_to_target(fast_vgicp_cuda)
 
   # add vgicp_cuda to libfast_gicp
   target_sources(fast_gicp PRIVATE

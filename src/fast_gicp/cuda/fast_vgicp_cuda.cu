@@ -1,8 +1,7 @@
 #include <fast_gicp/cuda/fast_vgicp_cuda.cuh>
 
 #include <thrust/device_new.h>
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
+#include "cuda_types.h"
 
 #include <fast_gicp/cuda/brute_force_knn.cuh>
 #include <fast_gicp/cuda/covariance_estimation.cuh>
@@ -25,7 +24,7 @@ FastVGICPCudaCore::FastVGICPCudaCore() {
   kernel_width = 0.25;
   kernel_max_dist = 3.0;
 
-  offsets.reset(new thrust::device_vector<Eigen::Vector3i>(1));
+  offsets.reset(new VoxelCoordinates(1));
   (*offsets)[0] = Eigen::Vector3i::Zero().eval();
 }
 FastVGICPCudaCore ::~FastVGICPCudaCore() {}
@@ -40,7 +39,7 @@ void FastVGICPCudaCore::set_kernel_params(double kernel_width, double kernel_max
 }
 
 void FastVGICPCudaCore::set_neighbor_search_method(fast_gicp::NeighborSearchMethod method, double radius) {
-  thrust::host_vector<Eigen::Vector3i, Eigen::aligned_allocator<Eigen::Vector3i>> h_offsets;
+  fast_gicp::cuda::host_vector<Eigen::Vector3i> h_offsets;
 
   switch (method) {
     default:
@@ -81,7 +80,7 @@ void FastVGICPCudaCore::set_neighbor_search_method(fast_gicp::NeighborSearchMeth
         for (int j = -range; j <= range; j++) {
           for (int k = -range; k <= range; k++) {
             Eigen::Vector3i offset(i, j, k);
-            if(offset.cast<double>().norm() <= radius + 1e-3) {
+            if (offset.cast<double>().norm() <= radius + 1e-3) {
               h_offsets.push_back(offset);
             }
           }
@@ -99,7 +98,7 @@ void FastVGICPCudaCore::swap_source_and_target() {
   source_neighbors.swap(target_neighbors);
   source_covariances.swap(target_covariances);
 
-  if(!target_points || !target_covariances) {
+  if (!target_points || !target_covariances) {
     return;
   }
 
@@ -107,8 +106,8 @@ void FastVGICPCudaCore::swap_source_and_target() {
 }
 
 void FastVGICPCudaCore::set_source_cloud(const std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>>& cloud) {
-  thrust::host_vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>> points(cloud.begin(), cloud.end());
-  if(!source_points) {
+  fast_gicp::cuda::aligned_host_vector<Eigen::Vector3f> points(cloud.begin(), cloud.end());
+  if (!source_points) {
     source_points.reset(new Points());
   }
 
@@ -116,8 +115,8 @@ void FastVGICPCudaCore::set_source_cloud(const std::vector<Eigen::Vector3f, Eige
 }
 
 void FastVGICPCudaCore::set_target_cloud(const std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>>& cloud) {
-  thrust::host_vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>> points(cloud.begin(), cloud.end());
-  if(!target_points) {
+  fast_gicp::cuda::aligned_host_vector<Eigen::Vector3f> points(cloud.begin(), cloud.end());
+  if (!target_points) {
     target_points.reset(new Points());
   }
 
@@ -126,10 +125,10 @@ void FastVGICPCudaCore::set_target_cloud(const std::vector<Eigen::Vector3f, Eige
 
 void FastVGICPCudaCore::set_source_neighbors(int k, const std::vector<int>& neighbors) {
   assert(k * source_points->size() == neighbors.size());
-  thrust::host_vector<int> k_neighbors(neighbors.begin(), neighbors.end());
+  fast_gicp::cuda::host_vector<int> k_neighbors(neighbors.begin(), neighbors.end());
 
-  if(!source_neighbors) {
-    source_neighbors.reset(new thrust::device_vector<int>());
+  if (!source_neighbors) {
+    source_neighbors.reset(new Indices());
   }
 
   *source_neighbors = k_neighbors;
@@ -137,29 +136,27 @@ void FastVGICPCudaCore::set_source_neighbors(int k, const std::vector<int>& neig
 
 void FastVGICPCudaCore::set_target_neighbors(int k, const std::vector<int>& neighbors) {
   assert(k * target_points->size() == neighbors.size());
-  thrust::host_vector<int> k_neighbors(neighbors.begin(), neighbors.end());
+  fast_gicp::cuda::host_vector<int> k_neighbors(neighbors.begin(), neighbors.end());
 
-  if(!target_neighbors) {
-    target_neighbors.reset(new thrust::device_vector<int>());
+  if (!target_neighbors) {
+    target_neighbors.reset(new Indices());
   }
 
   *target_neighbors = k_neighbors;
 }
 
 struct untie_pair_second {
-  __device__ int operator()(thrust::pair<float, int>& p) const {
-    return p.second;
-  }
+  __device__ int operator()(thrust::pair<float, int>& p) const { return p.second; }
 };
 
 void FastVGICPCudaCore::find_source_neighbors(int k) {
   assert(source_points);
 
-  thrust::device_vector<thrust::pair<float, int>> k_neighbors;
+  fast_gicp::cuda::device_vector<thrust::pair<float, int>> k_neighbors;
   brute_force_knn_search(*source_points, *source_points, k, k_neighbors);
 
-  if(!source_neighbors) {
-    source_neighbors.reset(new thrust::device_vector<int>(k_neighbors.size()));
+  if (!source_neighbors) {
+    source_neighbors.reset(new Indices(k_neighbors.size()));
   } else {
     source_neighbors->resize(k_neighbors.size());
   }
@@ -169,11 +166,11 @@ void FastVGICPCudaCore::find_source_neighbors(int k) {
 void FastVGICPCudaCore::find_target_neighbors(int k) {
   assert(target_points);
 
-  thrust::device_vector<thrust::pair<float, int>> k_neighbors;
+  fast_gicp::cuda::device_vector<thrust::pair<float, int>> k_neighbors;
   brute_force_knn_search(*target_points, *target_points, k, k_neighbors);
 
-  if(!target_neighbors) {
-    target_neighbors.reset(new thrust::device_vector<int>(k_neighbors.size()));
+  if (!target_neighbors) {
+    target_neighbors.reset(new Indices(k_neighbors.size()));
   } else {
     target_neighbors->resize(k_neighbors.size());
   }
@@ -184,8 +181,8 @@ void FastVGICPCudaCore::calculate_source_covariances(RegularizationMethod method
   assert(source_points && source_neighbors);
   int k = source_neighbors->size() / source_points->size();
 
-  if(!source_covariances) {
-    source_covariances.reset(new thrust::device_vector<Eigen::Matrix3f>(source_points->size()));
+  if (!source_covariances) {
+    source_covariances.reset(new Matrices(source_points->size()));
   }
   covariance_estimation(*source_points, k, *source_neighbors, *source_covariances);
   covariance_regularization(*source_points, *source_covariances, method);
@@ -195,78 +192,78 @@ void FastVGICPCudaCore::calculate_target_covariances(RegularizationMethod method
   assert(target_points && target_neighbors);
   int k = target_neighbors->size() / target_points->size();
 
-  if(!target_covariances) {
-    target_covariances.reset(new thrust::device_vector<Eigen::Matrix3f>(target_points->size()));
+  if (!target_covariances) {
+    target_covariances.reset(new Matrices(target_points->size()));
   }
   covariance_estimation(*target_points, k, *target_neighbors, *target_covariances);
   covariance_regularization(*target_points, *target_covariances, method);
 }
 
 void FastVGICPCudaCore::calculate_source_covariances_rbf(RegularizationMethod method) {
-  if(!source_covariances) {
-    source_covariances.reset(new thrust::device_vector<Eigen::Matrix3f>(source_points->size()));
+  if (!source_covariances) {
+    source_covariances.reset(new Matrices(source_points->size()));
   }
   covariance_estimation_rbf(*source_points, kernel_width, kernel_max_dist, *source_covariances);
   covariance_regularization(*source_points, *source_covariances, method);
 }
 
 void FastVGICPCudaCore::calculate_target_covariances_rbf(RegularizationMethod method) {
-  if(!target_covariances) {
-    target_covariances.reset(new thrust::device_vector<Eigen::Matrix3f>(target_points->size()));
+  if (!target_covariances) {
+    target_covariances.reset(new Matrices(target_points->size()));
   }
   covariance_estimation_rbf(*target_points, kernel_width, kernel_max_dist, *target_covariances);
   covariance_regularization(*target_points, *target_covariances, method);
 }
 
 void FastVGICPCudaCore::get_voxel_correspondences(std::vector<std::pair<int, int>>& correspondences) const {
-  thrust::host_vector<thrust::pair<int, int>> corrs = *voxel_correspondences;
+  fast_gicp::cuda::host_vector<thrust::pair<int, int>> corrs = *voxel_correspondences;
   correspondences.resize(corrs.size());
   std::transform(corrs.begin(), corrs.end(), correspondences.begin(), [](const auto& x) { return std::make_pair(x.first, x.second); });
 }
 
 void FastVGICPCudaCore::get_voxel_num_points(std::vector<int>& num_points) const {
-  thrust::host_vector<int> voxel_num_points = voxelmap->num_points;
+  fast_gicp::cuda::host_vector<int> voxel_num_points = voxelmap->num_points;
   num_points.resize(voxel_num_points.size());
   std::copy(voxel_num_points.begin(), voxel_num_points.end(), num_points.begin());
 }
 
 void FastVGICPCudaCore::get_voxel_means(std::vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>>& means) const {
-  thrust::host_vector<Eigen::Vector3f, Eigen::aligned_allocator<Eigen::Vector3f>> voxel_means = voxelmap->voxel_means;
+  fast_gicp::cuda::aligned_host_vector<Eigen::Vector3f> voxel_means = voxelmap->voxel_means;
   means.resize(voxel_means.size());
   std::copy(voxel_means.begin(), voxel_means.end(), means.begin());
 }
 
 void FastVGICPCudaCore::get_voxel_covs(std::vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>>& covs) const {
-  thrust::host_vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>> voxel_covs = voxelmap->voxel_covs;
+  fast_gicp::cuda::aligned_host_vector<Eigen::Matrix3f> voxel_covs = voxelmap->voxel_covs;
   covs.resize(voxel_covs.size());
   std::copy(voxel_covs.begin(), voxel_covs.end(), covs.begin());
 }
 
 void FastVGICPCudaCore::get_source_covariances(std::vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>>& covs) const {
-  thrust::host_vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>> c = *source_covariances;
+  fast_gicp::cuda::aligned_host_vector<Eigen::Matrix3f> c = *source_covariances;
   covs.resize(c.size());
   std::copy(c.begin(), c.end(), covs.begin());
 }
 
 void FastVGICPCudaCore::get_target_covariances(std::vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>>& covs) const {
-  thrust::host_vector<Eigen::Matrix3f, Eigen::aligned_allocator<Eigen::Matrix3f>> c = *target_covariances;
+  fast_gicp::cuda::aligned_host_vector<Eigen::Matrix3f> c = *target_covariances;
   covs.resize(c.size());
   std::copy(c.begin(), c.end(), covs.begin());
 }
 
 void FastVGICPCudaCore::create_target_voxelmap() {
   assert(target_points && target_covariances);
-  if(!voxelmap) {
+  if (!voxelmap) {
     voxelmap.reset(new GaussianVoxelMap(resolution));
   }
   voxelmap->create_voxelmap(*target_points, *target_covariances);
 }
 
 void FastVGICPCudaCore::update_correspondences(const Eigen::Isometry3d& trans) {
-  thrust::device_vector<Eigen::Isometry3f> trans_ptr(1);
+  fast_gicp::cuda::device_vector<Eigen::Isometry3f> trans_ptr(1);
   trans_ptr[0] = trans.cast<float>();
 
-  if(voxel_correspondences == nullptr) {
+  if (voxel_correspondences == nullptr) {
     voxel_correspondences.reset(new Correspondences());
   }
   linearized_x = trans.cast<float>();
@@ -274,11 +271,11 @@ void FastVGICPCudaCore::update_correspondences(const Eigen::Isometry3d& trans) {
 }
 
 double FastVGICPCudaCore::compute_error(const Eigen::Isometry3d& trans, Eigen::Matrix<double, 6, 6>* H, Eigen::Matrix<double, 6, 1>* b) const {
-  thrust::host_vector<Eigen::Isometry3f, Eigen::aligned_allocator<Eigen::Isometry3f>> trans_(2);
+  fast_gicp::cuda::aligned_host_vector<Eigen::Isometry3f> trans_(2);
   trans_[0] = linearized_x;
   trans_[1] = trans.cast<float>();
 
-  thrust::device_vector<Eigen::Isometry3f> trans_ptr = trans_;
+  fast_gicp::cuda::device_vector<Eigen::Isometry3f> trans_ptr = trans_;
 
   return compute_derivatives(*source_points, *source_covariances, *voxelmap, *voxel_correspondences, trans_ptr.data(), trans_ptr.data() + 1, H, b);
 }

@@ -1,4 +1,5 @@
 #include <fast_gicp/cuda/covariance_regularization.cuh>
+#include <fast_gicp/cuda/cuda_context.h>
 
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
@@ -32,10 +33,9 @@ struct eigenvalue_filter_kernel {
 };
 
 struct svd_reconstruction_kernel {
-  svd_reconstruction_kernel(
-    const thrust::device_ptr<const Eigen::Matrix3f>& values_diag,
-    thrust::device_vector<Eigen::Matrix3f>& covariances)
-  : values_diag_ptr(values_diag), covariances_ptr(covariances.data()) {}
+  svd_reconstruction_kernel(const thrust::device_ptr<const Eigen::Matrix3f>& values_diag, thrust::device_vector<Eigen::Matrix3f>& covariances)
+  : values_diag_ptr(values_diag),
+    covariances_ptr(covariances.data()) {}
   __host__ __device__ void operator()(const thrust::tuple<Eigen::Vector3f, Eigen::Vector3f, Eigen::Matrix3f, int>& input) const {
     const auto& mean = thrust::get<0>(input);
     const auto& values = thrust::get<1>(input);
@@ -50,8 +50,6 @@ struct svd_reconstruction_kernel {
   const thrust::device_ptr<const Eigen::Matrix3f> values_diag_ptr;
   thrust::device_ptr<Eigen::Matrix3f> covariances_ptr;
 };
-
-
 
 struct covariance_regularization_svd {
   __host__ __device__ void operator()(Eigen::Matrix3f& cov) const {
@@ -92,9 +90,9 @@ struct covariance_regularization_mineig {
     }
 
     Eigen::Matrix3f v_diag = Eigen::Matrix3f::Zero();
-    v_diag(0,0) = values.x();
-    v_diag(1,1) = values.y();
-    v_diag(2,2) = values.z();
+    v_diag(0, 0) = values.x();
+    v_diag(1, 1) = values.y();
+    v_diag(2, 2) = values.z();
     Eigen::Matrix3f v_inv = eig.eigenvectors().inverse();
     cov = eig.eigenvectors() * v_diag * v_inv;
   }
@@ -103,9 +101,12 @@ struct covariance_regularization_mineig {
 }  // namespace
 
 void covariance_regularization(thrust::device_vector<Eigen::Vector3f>& means, thrust::device_vector<Eigen::Matrix3f>& covs, RegularizationMethod method) {
+  // Create execution context for this operation
+  CudaExecutionContext ctx("covariance_regularization");
+
   if (method == RegularizationMethod::PLANE) {
     thrust::device_vector<int> d_indices(covs.size());
-    thrust::sequence(d_indices.begin(), d_indices.end());
+    thrust::sequence(ctx.policy(), d_indices.begin(), d_indices.end());
     auto first = thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(means.begin(), covs.begin(), d_indices.begin())), svd_kernel());
     auto last = thrust::make_transform_iterator(thrust::make_zip_iterator(thrust::make_tuple(means.end(), covs.end(), d_indices.end())), svd_kernel());
 
@@ -113,12 +114,12 @@ void covariance_regularization(thrust::device_vector<Eigen::Vector3f>& means, th
     thrust::device_vector<Eigen::Matrix3f> val(1);
     val[0] = diag_matrix;
     thrust::device_ptr<Eigen::Matrix3f> diag_matrix_ptr = val.data();
-    thrust::for_each(first, last, svd_reconstruction_kernel(diag_matrix_ptr, covs));
+    thrust::for_each(ctx.policy(), first, last, svd_reconstruction_kernel(diag_matrix_ptr, covs));
 
   } else if (method == RegularizationMethod::FROBENIUS) {
-    thrust::for_each(covs.begin(), covs.end(), covariance_regularization_frobenius());
+    thrust::for_each(ctx.policy(), covs.begin(), covs.end(), covariance_regularization_frobenius());
   } else if (method == RegularizationMethod::MIN_EIG) {
-    thrust::for_each(covs.begin(), covs.end(), covariance_regularization_mineig());
+    thrust::for_each(ctx.policy(), covs.begin(), covs.end(), covariance_regularization_mineig());
   } else {
     std::cerr << "unimplemented covariance regularization method was selected!!" << std::endl;
   }
