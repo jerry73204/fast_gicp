@@ -41,30 +41,30 @@ endif()
 if(BUILD_VGICP_CUDA)
   # Modern CUDA 12.x support
   find_package(CUDAToolkit 12.0 REQUIRED)
-  
+
   # Set CUDA compiler and host compiler before enabling CUDA language
   set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
   set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
-  
+
   # Set default architecture before enabling CUDA - only recent GPUs for faster builds
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES "75;80;86;87;89;90")  # Turing, Ampere, Ada Lovelace, Hopper
   endif()
-  
+
   enable_language(CUDA)
-  
+
   # Set CUDA standards for modern compilation
   set(CMAKE_CUDA_STANDARD 17)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
   set(CMAKE_CUDA_EXTENSIONS OFF)
-  
+
   # CUDA compilation flags for 12.x compatibility and fast builds
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DTHRUST_IGNORE_CUB_VERSION_CHECK")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DFAST_GICP_CUDA_12_MODERNIZATION")
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wno-deprecated-gpu-targets")  # Suppress architecture warnings
-  
+
   message(STATUS "CUDA 12.x enabled with architectures: ${CMAKE_CUDA_ARCHITECTURES}")
   message(STATUS "Using CUDA compiler: ${CMAKE_CUDA_COMPILER}")
   message(STATUS "Using CUDA host compiler: ${CMAKE_CUDA_HOST_COMPILER}")
@@ -159,11 +159,11 @@ if(BUILD_VGICP_CUDA)
     src/fast_gicp/cuda/ndt_cuda.cu
     src/fast_gicp/cuda/ndt_compute_derivatives.cu
   )
-  
+
   # Set CUDA language properties for modern CMake
   set_property(TARGET fast_vgicp_cuda PROPERTY CUDA_LANGUAGE_STANDARD 17)
   set_property(TARGET fast_vgicp_cuda PROPERTY CUDA_STANDARD_REQUIRED ON)
-  
+
   target_include_directories(fast_vgicp_cuda PRIVATE
     include
     thirdparty/Eigen
@@ -204,6 +204,64 @@ if(BUILD_test)
   add_dependencies(gicp_test fast_gicp)
   target_link_libraries(gicp_test ${GTEST_LIBRARIES} ${PCL_LIBRARIES} fast_gicp)
   gtest_add_tests(TARGET gicp_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} EXTRA_ARGS "${CMAKE_SOURCE_DIR}/data")
+
+  # KNN unit tests
+  if(BUILD_VGICP_CUDA)
+    add_executable(knn_test src/test/knn_test.cu)
+    add_dependencies(knn_test fast_gicp)
+    target_link_libraries(knn_test ${GTEST_LIBRARIES} fast_gicp fast_vgicp_cuda)
+    set_property(TARGET knn_test PROPERTY CUDA_LANGUAGE_STANDARD 17)
+    gtest_add_tests(TARGET knn_test)
+
+    # KNN component unit tests
+    add_executable(knn_unit_test src/test/knn_unit_test.cu)
+    add_dependencies(knn_unit_test fast_gicp)
+    target_link_libraries(knn_unit_test ${GTEST_LIBRARIES} fast_gicp fast_vgicp_cuda)
+    set_property(TARGET knn_unit_test PROPERTY CUDA_LANGUAGE_STANDARD 17)
+    gtest_add_tests(TARGET knn_unit_test)
+
+    # KNN numerical accuracy tests
+    add_executable(knn_accuracy_test src/test/knn_accuracy_test.cu)
+    add_dependencies(knn_accuracy_test fast_gicp)
+    target_link_libraries(knn_accuracy_test ${GTEST_LIBRARIES} fast_gicp fast_vgicp_cuda)
+    set_property(TARGET knn_accuracy_test PROPERTY CUDA_LANGUAGE_STANDARD 17)
+    gtest_add_tests(TARGET knn_accuracy_test)
+  endif()
+
+  # Integration tests
+  if(BUILD_VGICP_CUDA)
+    add_executable(integration_test src/test/integration_test.cu)
+    add_dependencies(integration_test fast_gicp)
+    target_link_libraries(integration_test ${GTEST_LIBRARIES} ${PCL_LIBRARIES} fast_gicp fast_vgicp_cuda)
+    set_property(TARGET integration_test PROPERTY CUDA_LANGUAGE_STANDARD 17)
+    gtest_add_tests(TARGET integration_test)
+  endif()
+
+  # Real data tests
+  if(BUILD_VGICP_CUDA)
+    add_executable(real_data_test src/test/real_data_test.cu)
+    add_dependencies(real_data_test fast_gicp)
+    target_link_libraries(real_data_test ${GTEST_LIBRARIES} ${PCL_LIBRARIES} fast_gicp fast_vgicp_cuda)
+    set_property(TARGET real_data_test PROPERTY CUDA_LANGUAGE_STANDARD 17)
+    gtest_add_tests(TARGET real_data_test WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} EXTRA_ARGS "${CMAKE_SOURCE_DIR}/data")
+  endif()
+
+  # Enum validation tests
+  add_executable(enum_validation_test src/test/enum_validation_test.cpp)
+  add_dependencies(enum_validation_test fast_gicp)
+  target_link_libraries(enum_validation_test ${GTEST_LIBRARIES} ${PCL_LIBRARIES} fast_gicp)
+  if(BUILD_VGICP_CUDA)
+    target_link_libraries(enum_validation_test fast_vgicp_cuda)
+  endif()
+  gtest_add_tests(TARGET enum_validation_test)
+
+  # KNN benchmark (not a test, just for performance monitoring)
+  if(BUILD_VGICP_CUDA)
+    add_executable(knn_benchmark src/test/knn_benchmark.cu)
+    add_dependencies(knn_benchmark fast_gicp)
+    target_link_libraries(knn_benchmark fast_gicp fast_vgicp_cuda)
+    set_property(TARGET knn_benchmark PROPERTY CUDA_LANGUAGE_STANDARD 17)
+  endif()
 endif()
 
 if(catkin_FOUND)
