@@ -7,7 +7,7 @@
 
 namespace fast_gicp {
 
-static std::vector<Eigen::Vector3i, Eigen::aligned_allocator<Eigen::Vector3i>> neighbor_offsets(NeighborSearchMethod search_method) {
+inline std::vector<Eigen::Vector3i, Eigen::aligned_allocator<Eigen::Vector3i>> neighbor_offsets(NeighborSearchMethod search_method) {
   switch (search_method) {
       // clang-format off
     default:
