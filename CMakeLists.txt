@@ -18,19 +18,6 @@ find_package(PCL REQUIRED)
 find_package(Eigen3 REQUIRED)
 add_definitions(${PCL_DEFINITIONS})
 
-if(DEFINED ENV{ROS_VERSION})
-  set(ROS_VERSION $ENV{ROS_VERSION})
-endif()
-
-if(NOT BUILD_PYTHON_BINDINGS)
-  if(${ROS_VERSION})
-    if(${ROS_VERSION} EQUAL 1)
-      find_package(catkin)
-    elseif (${ROS_VERSION} EQUAL 2)
-      find_package(ament_cmake)
-    endif()
-  endif()
-endif()
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -70,15 +57,6 @@ if(BUILD_VGICP_CUDA)
   message(STATUS "Using CUDA host compiler: ${CMAKE_CUDA_HOST_COMPILER}")
 endif()
 
-###################################
-## catkin specific configuration ##
-###################################
-if(catkin_FOUND)
-  catkin_package(
-    INCLUDE_DIRS include
-    LIBRARIES fast_gicp
-  )
-endif()
 
 ###########
 ## Build ##
@@ -169,10 +147,8 @@ if(BUILD_VGICP_CUDA)
     thirdparty/Eigen
     # thirdparty/nvbio  # Disabled - nvbio dependency removed for Phase 1
     ${EIGEN3_INCLUDE_DIR}
-    ${catkin_INCLUDE_DIRS}
   )
   target_link_libraries(fast_vgicp_cuda
-    ${catkin_LIBRARIES}
     CUDA::cublas
     CUDA::curand
     CUDA::cusparse
@@ -187,13 +163,6 @@ if(BUILD_VGICP_CUDA)
     fast_vgicp_cuda
   )
   add_dependencies(fast_gicp fast_vgicp_cuda)
-  if(catkin_FOUND)
-    install(TARGETS fast_vgicp_cuda
-      LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
-  elseif (ament_cmake_FOUND)
-    install(TARGETS fast_vgicp_cuda
-      LIBRARY DESTINATION lib)
-  endif()
 endif()
 
 ### TEST ###
@@ -264,29 +233,27 @@ if(BUILD_test)
   endif()
 endif()
 
-if(catkin_FOUND)
-  ###################################
-  ## catkin specific configuration ##
-  ###################################
-  install(TARGETS ${PROJECT_NAME}
-    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
+###################################
+## Standard CMake Installation  ##
+###################################
 
-  install(DIRECTORY include/
-    DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION}
-    FILES_MATCHING PATTERN "*.hpp")
-elseif (ament_cmake_FOUND)
-  ##################################
-  ## ament specific configuration ##
-  ##################################
-  ament_export_include_directories(include)
-  ament_export_libraries(fast_gicp)
-  ament_package()
+# Install main library
+install(TARGETS fast_gicp
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
-  install(TARGETS ${PROJECT_NAME}
-    LIBRARY DESTINATION lib)
+# Install headers
+install(DIRECTORY include/
+  DESTINATION include
+  FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
+)
 
-  install(
-      DIRECTORY "include/"
-      DESTINATION include
-    )
+# Install CUDA library if built
+if(BUILD_VGICP_CUDA)
+  install(TARGETS fast_vgicp_cuda
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+  )
 endif()
